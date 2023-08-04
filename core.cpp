@@ -43,30 +43,22 @@ byte* dec_one(byte* cipher, byte* key, byte check)
 	return plain;
 }
 
-byte* metadata_gen(int len)
+vector<byte> metadata_gen(int len)
 {
-	byte* metadata;
-	int meta_len = len/AES::BLOCKSIZE;
+	vector<byte> metadata;
 	int remain = len;
-	if(len%16 != 0)
-	{	
-		meta_len++;
-	}
-	metadata = new byte[meta_len]; 
 
-	int i = 0;
 	while(remain > AES::BLOCKSIZE)
 	{   
-		metadata[i] = (byte)0x10;
+		metadata.push_back((byte)0x10);
 		remain -= AES::BLOCKSIZE;
-		i++;
 	}   
-	metadata[i] = (byte)remain; 
+	metadata.push_back((byte)remain); 
 
     return metadata;
 }
 
-vector<byte> metadata_enc(byte* metadata, byte* key)
+vector<byte> metadata_enc(vector<byte> metadata, byte* key)
 {
 	vector<byte> meta_cipher;
 	
@@ -76,7 +68,7 @@ vector<byte> metadata_enc(byte* metadata, byte* key)
 	byte tmp_block[AES::BLOCKSIZE] = {0, };
 	
 	int left_len = sizeof(metadata);
-	byte* index = metadata;
+	byte* index = metadata.data();
 
 	while(left_len > one_block_len)
 	{
@@ -106,12 +98,12 @@ vector<byte> metadata_enc(byte* metadata, byte* key)
 	return meta_cipher;
 }
 
-vector<byte> metadata_dec(byte* meta_cipher, byte* key)
+vector<byte> metadata_dec(vector<byte> meta_cipher, byte* key)
 {
 	vector<byte> metadata;
 	byte tmp_block[AES::BLOCKSIZE] = {0, };
 	int left_len = sizeof(meta_cipher);
-	byte* index = meta_cipher;
+	byte* index = meta_cipher.data();
 	byte check = 0x00;
 
 	while(left_len > 0)
@@ -187,7 +179,7 @@ string decryption(vector<byte> cipher, vector<byte> meta_cipher, byte* key)
 	for (int i = 0; i < metadata.size(); i++)
 	{
 		tmp_block = dec_one(index, key, check);
-		for (int j = 0; j < metadata[i]; j++)
+		for (int j = 0; j < (int)metadata[i]; j++)
 		{
 			plain.push_back(tmp_block[j + 1]);
 		}
@@ -199,17 +191,103 @@ string decryption(vector<byte> cipher, vector<byte> meta_cipher, byte* key)
 	return plain;
 }
 
-/*class DL-ECB
+int search_block_index(vector<byte> metadata, int index)
 {
+	int check = index;
+	int block_index = 0;
+	while(block_index < metadata.size())
+	{
+		if (check < 0)
+			return block_index;
+		else if (check > 0)
+			block_index++;
+		else
+				return block_index + 1;
+	}
+}
+
+class DL-ECB
+{
+
 private:
 	vector<byte> data;
 	Vector<byte> metadata;
+	byte key[AES::BLOCKSIZE];
+
+public:
+	DL-ECB(byte* key)
+	{
+		memcpy(this->key, key, AES::BLOCKSIZE);
+	}
+
+	~DL-ECB() {}
+
+	void Insertion(string text, int index)
+	{
+		srand(time(NULL));
+		vector<byte> meta_plain = metadata_dec(this->metadata, this->key);
+		string insert_text = text;
+		int block_index = 0;
+		byte f_link = 0x00;
+		byte b_link = 0x00;
+		
+		if(index == 0 && meta_plain.size() = 0)
+		{
+			f_link = (byte)rand()%256;
+			b_link = f_link;
+		}
+		
+		else
+		{
+			block_index = search_block_index(meta_plain, index);
+			int in_index = index;
+			if (block_index == meta_plain.size())
+			{
+				block_index--;
+				in_index = meta_plain[block_index];
+			}
+			else
+			{
+				for (int i = 0; i < block_index; i++)
+				{
+					in_index -= meta_plain[i];
+				}
+			}
+			
+			byte tmp_block[AES::BLOCKSIZE] = dec_one(this->data.data() + AES::BLOCKSIZE*block_index, this->key, 0x00);
+			f_link = tmp_block[0];
+			b_link = tmp_block[15];
+			
+			string front = "";
+			for(int i = 0; i < in_index; i++)
+			{
+				front.append(tmp_block[i + 1]);
+			}
+			string back = "";
+			for(int i = in_index; i < AES::BLOCKSIZE - 1; i++)
+			{
+				back.append(tmp_block[i + 1]);
+			}
+			insert_text = front + insert_text + back;
+
+			data.erase(AES::BLOCKSIZE*block_index, AES::BLOCKSIZE*(block_index + 1));
+			meta_plain.erase(block_index);
+		}
+
+		vector<byte> new_cipher = encryption(insert_text, this->key, if_link, b_link);
+		vector<byte> new_meta = metadata_gen(insert_text.size());
+		this->data.insert(this->data.begin() + block_index*AES::BLOCKSIZE, new_cipher.begin(), new_cipher.end());
+		meta_plain.insert(meta_plain.begin() + block_index, new_meta.begin(), new_meta.end());
+		this->metadata = metadata_enc(meta_plain, key);
+
+		return;
+	}
+
+	void Deletion(int del_len, int index)
+	{}
 
 
-
-
-
-}*/
+}
 
 
 
