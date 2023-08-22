@@ -22,7 +22,7 @@ byte* enc_one(string input_str, byte* key, byte f_link, byte b_link)
 				    
 	cipher_block[0] = f_link;
 	cipher_block[15] = b_link;
-	memcpy(cipher_block + 1, input_str.c_str(), one_block_size);
+	memcpy(cipher_block + 1, input_str.c_str(), one_block_len);
 	e.ProcessData(cipher_block, cipher_block, AES::BLOCKSIZE);
     
 	return cipher_block;
@@ -151,7 +151,7 @@ vector<byte> encryption(string plain, byte* key, byte f_iv, byte b_iv)
 	}
 
 	string subStr = plain.substr(plain.length() - left_len);
-	while(subStr.length() != one_block_size)
+	while(subStr.length() != one_block_len)
 	{
 		subStr += '\x00';
 	}
@@ -197,14 +197,44 @@ int search_block_index(vector<byte> metadata, int index)
 	int block_index = 0;
 	while(block_index < metadata.size())
 	{
+		check -= metadata[block_index];
 		if (check < 0)
 			return block_index;
 		else if (check > 0)
 			block_index++;
 		else
-				return block_index + 1;
+			return block_index + 1;
 	}
 }
+
+class Modi_info
+{
+
+private:
+	int modi_index;
+	int modi_len;
+	int del_index;
+	int del_len;
+	int ins_index;
+	vector<byte> new_meta;
+	vector<byte> ins_list;
+
+public:
+	Modi_info(int index, int len)
+	{
+		modi_index = index;
+		modi_len = len;
+	}
+
+	void unpacking(vector<byte> data, vector<byte> metadata)
+	{
+		metadata.clear();
+		metadata.insert(metadata.end(), this->new_meta.begin(), this->new_meta.end());
+
+	}
+
+}
+
 
 class DL-ECB
 {
@@ -284,7 +314,67 @@ public:
 	}
 
 	void Deletion(int del_len, int index)
-	{}
+	{
+		srand(time(NULL));
+		vector<byte> meta_plain = metadata_dec(this->metadata, this->key);
+		byte f_link = 0x00;
+		byte b_link = 0x00;
+		
+		int f_block_index = search_block_index(meta_plain, index);
+		int b_block_index = search_block_index(meta_plain, index + del_len - 1);
+		int f_in_index = index;
+		int b_in_index = index + del_len - 1; 
+
+		for (int i = 0; i < f_block_index; i++)
+		{
+			f_in_index -= meta_plain[i];
+		}
+
+		for (int i = 0; i < b_block_index; i++)
+		{
+			b_in_index -= meta_plain[i];
+		}
+
+		if (f_in_index == 0 && b_in_index == 0)
+		{
+			if (f_block_index == 0)
+			{
+				if (b_block_index == meta_plain.size())				// remove all
+				{
+					this->data.clean();
+					this->metadata.clean();
+				}
+
+				else
+				{
+					byte tmp_block[AES::BLOCKSIZE] = dec_one(data + f_block_index*AES::BLOCKSIZE, this->key, 0x00);
+					f_link = tmp_block[0];
+					tmp_block = dec_one(data + b_block_index*AES::BLOCKSIZE, this->key, 0x00);
+					tmp_block[0] = f_link;
+					this->data.erase(this->data.begin() + f_block_index*AES::BLOCKSIZE, this->data.begin() + (b_block_index + 1)*AES::BLOCKSIZE - 1);
+					string tmp_str;
+					for(int i = 0; i < AES::BLOCKSIZE - 1; i++)
+					{
+						tmp_str.append(tmp_block[i + 1];
+					}
+					tmp_block = enc_one(tmp_str, this->key, tmp_block[0], tmp_block[15]);
+					data.insert(this->data.begin() + f_block_index * AES::BLOCKSIZE, tmp_block);
+				}
+			}
+		}
+
+		else if (f_in_index == 0 && b_in_index != 0)
+		{}
+
+		else if (f_in_index != 0 && b_in_index == 0)
+		{}
+
+		else
+		{}
+
+
+		return;
+	}
 
 
 }
