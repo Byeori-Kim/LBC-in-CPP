@@ -34,7 +34,7 @@ byte* dec_one(byte* cipher, byte* key, byte check)
 
 	ECB_Mode<AES>::Decryption d;
 	d.SetKey(key, sizeof(key));
-	d.ProcessData(plain, cipher, key);
+	d.ProcessData(plain, cipher, AES::BLOCKSIZE);
 	if(check != 0x00 && plain[0] != check)
 	{
 		cout << "Error" << endl;
@@ -252,9 +252,10 @@ public:
 
 	~DL-ECB() {}
 
-	void Insertion(string text, int index)
+	Modi_info Insertion(string text, int index)
 	{
 		srand(time(NULL));
+		Modi_info modi = new Modi_info(index, text.length());
 		vector<byte> meta_plain = metadata_dec(this->metadata, this->key);
 		string insert_text = text;
 		int block_index = 0;
@@ -347,31 +348,107 @@ public:
 
 				else
 				{
-					byte tmp_block[AES::BLOCKSIZE] = dec_one(data + f_block_index*AES::BLOCKSIZE, this->key, 0x00);
+					byte tmp_block[AES::BLOCKSIZE] = dec_one(this->data.data() + f_block_index*AES::BLOCKSIZE, this->key, 0x00);
 					f_link = tmp_block[0];
 					tmp_block = dec_one(data + b_block_index*AES::BLOCKSIZE, this->key, 0x00);
 					tmp_block[0] = f_link;
 					this->data.erase(this->data.begin() + f_block_index*AES::BLOCKSIZE, this->data.begin() + (b_block_index + 1)*AES::BLOCKSIZE - 1);
 					string tmp_str;
-					for(int i = 0; i < AES::BLOCKSIZE - 1; i++)
+					for(int i = 0; i < AES::BLOCKSIZE - 2; i++)
 					{
 						tmp_str.append(tmp_block[i + 1];
 					}
 					tmp_block = enc_one(tmp_str, this->key, tmp_block[0], tmp_block[15]);
-					data.insert(this->data.begin() + f_block_index * AES::BLOCKSIZE, tmp_block);
+					this->data.insert(this->data.begin() + f_block_index * AES::BLOCKSIZE, tmp_block);
 				}
 			}
+			else
+			{
+				byte tmp_block[AES::BLOCKSIZE] = dec_one(this->data.data() + (b_block_index - 1)*AES::BLOCKSIZE, 0x00);
+				b_link = tmp_block[15];
+				tmp_block = dec_one(this->data.data() + (f_block_index - 1)*AES::BLOCKSIZE, this->key, 0x00);
+				this->data.erase(this->data.begin() + (f_block_index - 1)*AES::BLOCKSIZE, this->data.begin() + b_block_index*AES::BLOCKSIZE - 1);
+				string tmp_str;
+				for (int i = 0; i < AES::BLOCKSIZE - 2; i++)
+				{
+					tmp_str.append(tmp_block[i+1]);
+				}
+				tmp_block = enc_one(tmp_str, this->key, tmp_block[0], b_link);
+				this->data.insert(this->data.begin() + f_block_index*AES::BLOCKSIZE, tmp_block);
+			
+			}
+			meta_plain.erase(meta_plain.begin() + f_block_index, meta_plain.begin() + b_block_index);
 		}
 
 		else if (f_in_index == 0 && b_in_index != 0)
-		{}
+		{
+			byte tmp_block[AES::BLOCKSIZE] = dec_one(this->data.data() + f_block_index*AES::BLOCKSIZE, this->key, 0x00);
+			f_link = tmp_block[0];
+			tmp_block = dec_one(this->data.data() + b_block_index*AES::BLOCKSIZE, this->key, 0x00);
+			b_link = tmp_block[15];
+			string tmp_str;
+			for (int i = b_in_index; i < AES::BLOCKSIZE - 2; i++)
+			{
+				tmp_str.append(tmp_block[i + 1]);
+			}
+			tmp_block = enc_one(tmp_str, this->key, f_link, b_link);
+			this->data.erase(this->data.begin() + (f_block_index - 1)*AES::BLOCKSIZE,this->data.begin() +  b_block_index*AES::BLOCKSIZE);
+			this->data.insert(this->data.begin() + (f_block_index - 1)*AES::BLOCKSIZE, tmp_block, AES::BLOCKSIZE);
+			
+			meta_plain.erase(meta_plain.begin() + f_block_index, meta_plain.begin() + b_block_index);
+			meta_plain.insert(meta_plain.begin() + f_block_index, (byte)tmp_str.length());
+		}
 
 		else if (f_in_index != 0 && b_in_index == 0)
-		{}
+		{
+			byte tmp_block[AES::BLOCKSIZE] = dec_one(this->data.data() + f_block_index*AES::BLOCKSIZE, this->key, 0x00);
+			f_link = tmp_block[0];
+			string tmp_str;
+			for (int i = 0; i < f_in_index; i++)
+			{
+				tmp_str.append(tmp_block[i + 1]);
+			}
+			tmp_block = dec_one(this->data.data() + (b_block_index - 1)*AES::BLOCKSIZE, this->key, 0x00);
+			b_link = tmp_block[15];
+			tmp_block = enc_one(tmp_str, this->key, f_link, b_link);
+			this->data.erase(this->data.begin() + f_block_index*AES::BLOCKSIZE, this->data.begin() + b_block_index*AES::BLOCKSIZE);
+			this->data.insert(this->data.begin() + f_block_index*AES::BLOCKSIZE, tmp_block, AES::BLOCKSIZE); 
+
+			meta_plain.erase(meta_plain.begin() + f_block_index, meta_plain.begin() + b_block_index);
+			meta_plain.insert(meta_plain.begin() + f_block_index, (byte)tmp_str.length());
+		}
 
 		else
-		{}
+		{
+			byte tmp_block[AES::BLOCKSIZE] = dec_one(this->data.data() + f_block_index*AES::BLOCKSIZE, this->key, 0x00);
+			f_link = tmp_block[0];
+			string tmp_str;
+			for (int i = 0; i < f_in_index; i++)
+			{
+				tmp_str.append(tmp_block[i + 1]);
+			}
+			tmp_block = dec_one(this->data.data() + b_block_index*AES::BLOCKSIZE, rhis->key, 0x00);
+			b_link = tmp_block[15];
+			for(int i = b_in_index; i < AES::BLOCKSIZE - 2; i++)
+			{
+				tmp_str.append(tmp_block[i + 1]);
+			}
+			vector<byte> tmp_enc = encryption(tmp_str, this->key, f_link, b_link);
+			this->data.erase(this->data.begin() + f_block_index*AES::BLOCKSIZE, this->data.begin() + b_block_index*AES::BLOCKSIZE);
+			this->data.insert(this->data.begin() + f_block_index*AES::BLOCKSIZE, tmp_enc.data(), tmp_enc.size());
 
+			meta_plain.erase(meta_plain.begin() + f_block_index, meta_plain.begin() + b_block_index);
+			if(tmp_str.length() > AES::BLOCKSIZE)
+			{
+				meta_plain.insert(meta_plain.begin() + f_block_index, (byte)(tmp_str.length()%AES::BLOCKSIZE));
+				meta_plain.insert(meta_plain.begin() + f_block_index, 0x10);
+			}
+			else
+			{
+				meta_plain.insert(meta_plain.begin() + f_block_index, (byte)tmp_str.length());
+			}
+		}
+		
 
 		return;
 	}
