@@ -11,7 +11,7 @@
 using namespace std;
 using namespace CryptoPP;
 
-#define one_block_len = 14
+#define one_block_len 14
 
 class Modi_info
 {
