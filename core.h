@@ -26,6 +26,10 @@ private:
 	vector<byte> ins_list;
 
 public:
+	Modi_info(int index, int len);
+	void update_meta(vector<byte> metadata);
+	void update_deletion(int index, int len);
+	void update_insertion(int index, vector<byte> list);
 	void unpacking(vector<byte> data, vector<byte> metadata);
 };
 
@@ -41,6 +45,10 @@ public:
 	DL_ECB(byte* key);
 
 	~DL_ECB();
+
+	vector<byte> print_data();
+
+	vector<byte> print_meta();
 
 	Modi_info Insertion(string text, int index);
 

@@ -48,7 +48,7 @@ vector<byte> metadata_gen(int len)
 	vector<byte> metadata;
 	int remain = len;
 
-	while(remain > AES::BLOCKSIZE)
+	while(remain > one_block_len)
 	{   
 		metadata.push_back((byte)one_block_len);
 		remain -= one_block_len;
@@ -104,7 +104,8 @@ vector<byte> metadata_dec(vector<byte> meta_cipher, byte* key)
 	int left_len = meta_cipher.size();
 	byte* index = meta_cipher.data();
 	byte check = 0x00;
-
+	if (left_len == 0)
+		return metadata;
 	while(left_len > 0)
 	{
 		byte* tmp_block = dec_one(index, key, check);
@@ -203,11 +204,37 @@ int search_block_index(vector<byte> metadata, int index)
 	}
 	return block_index;
 }
-/*
+
 Modi_info::Modi_info(int index, int len)
 {
 	modi_index = index;
 	modi_len = len;
+	del_index = 0;
+	del_len = 0;
+	ins_index = 0;
+
+}
+void Modi_info::update_meta(vector<byte> metadata)
+{
+	this->new_meta.clear();
+	this->new_meta.insert(this->new_meta.end(), metadata.begin(), metadata.end());
+
+	return;
+}
+
+void Modi_info::update_deletion(int index, int len)
+{
+	this->del_index = index;
+	this->del_len = len;
+
+	return;
+}
+
+void Modi_info::update_insertion(int index, vector<byte> list)
+{
+	this->ins_index = index;
+	this->ins_list.clear();
+	this->ins_list.insert(ins_list.end(), list.begin(), list.end());
 }
 
 void Modi_info::unpacking(vector<byte> data, vector<byte> metadata)
@@ -217,27 +244,35 @@ void Modi_info::unpacking(vector<byte> data, vector<byte> metadata)
 
 }
 
-}
-
 
 DL_ECB::DL_ECB(byte* key)
 {
 	memcpy(this->key, key, AES::BLOCKSIZE);
 }
 
-DL_ECB::~DL-ECB() {}
+DL_ECB::~DL_ECB() {}
+
+vector<byte> DL_ECB::print_data()
+{
+	return this->data;
+}
+
+vector<byte> DL_ECB::print_meta()
+{
+	return this->metadata;
+}
 
 Modi_info DL_ECB::Insertion(string text, int index)
 {
 	srand(time(NULL));
-	Modi_info modi = new Modi_info(index, text.length());
+	Modi_info modi(index, text.length());
 	vector<byte> meta_plain = metadata_dec(this->metadata, this->key);
 	string insert_text = text;
 	int block_index = 0;
 	byte f_link = 0x00;
 	byte b_link = 0x00;
 
-	if(index == 0 && meta_plain.size() = 0)
+	if(index == 0 && meta_plain.size() == 0)
 	{
 		f_link = (byte)rand()%256;
 		b_link = f_link;
@@ -250,45 +285,45 @@ Modi_info DL_ECB::Insertion(string text, int index)
 		if (block_index == meta_plain.size())
 		{
 			block_index--;
-			in_index = meta_plain[block_index];
+			in_index = (int)meta_plain[block_index];
 		}
 		else
 		{
 			for (int i = 0; i < block_index; i++)
 			{
-				in_index -= meta_plain[i];
+				in_index -= (int)meta_plain[i];
 			}
 		}
 
-		byte tmp_block[AES::BLOCKSIZE] = dec_one(this->data.data() + AES::BLOCKSIZE*block_index, this->key, 0x00);
+		byte* tmp_block = dec_one(this->data.data() + AES::BLOCKSIZE*block_index, this->key, 0x00);
 		f_link = tmp_block[0];
 		b_link = tmp_block[15];
 
 		string front = "";
 		for(int i = 0; i < in_index; i++)
 		{
-			front.append(tmp_block[i + 1]);
+			front += tmp_block[i + 1];
 		}
 		string back = "";
-		for(int i = in_index; i < AES::BLOCKSIZE - 1; i++)
+		for(int i = in_index; i < one_block_len; i++)
 		{
-			back.append(tmp_block[i + 1]);
+			back += tmp_block[i + 1];
 		}
 		insert_text = front + insert_text + back;
 
-		data.erase(AES::BLOCKSIZE*block_index, AES::BLOCKSIZE*(block_index + 1));
-		meta_plain.erase(block_index);
+		data.erase(data.begin() + AES::BLOCKSIZE*block_index, data.begin() + AES::BLOCKSIZE*(block_index + 1));
+		meta_plain.erase(meta_plain.begin() + block_index);
 	}
 
-	vector<byte> new_cipher = encryption(insert_text, this->key, if_link, b_link);
+	vector<byte> new_cipher = encryption(insert_text, this->key, f_link, b_link);
 	vector<byte> new_meta = metadata_gen(insert_text.size());
 	this->data.insert(this->data.begin() + block_index*AES::BLOCKSIZE, new_cipher.begin(), new_cipher.end());
 	meta_plain.insert(meta_plain.begin() + block_index, new_meta.begin(), new_meta.end());
 	this->metadata = metadata_enc(meta_plain, key);
 
-	return;
+	return modi;
 }
-
+/*
 Modi_info DL_ECB::Deletion(int del_len, int index)
 {
 	srand(time(NULL));
@@ -411,7 +446,7 @@ Modi_info DL_ECB::Deletion(int del_len, int index)
 		}
 		vector<byte> tmp_enc = encryption(tmp_str, this->key, f_link, b_link);
 		this->data.erase(this->data.begin() + f_block_index*AES::BLOCKSIZE, this->data.begin() + b_block_index*AES::BLOCKSIZE);
-		this->data.insert(this->data.begin() + f_block_index*AES::BLOCKSIZE, tmp_enc.data(), tmp_enc.size());
+		this->data.insert(this->data.data() + f_block_index*AES::BLOCKSIZE, tmp_enc.data(), tmp_enc.size());
 
 		meta_plain.erase(meta_plain.begin() + f_block_index, meta_plain.begin() + b_block_index);
 		if(tmp_str.length() > AES::BLOCKSIZE)
