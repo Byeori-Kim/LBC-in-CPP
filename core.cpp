@@ -223,26 +223,34 @@ void Modi_info::update_meta(vector<byte> metadata)
 	return;
 }
 
-void Modi_info::update_deletion(int index, int len)
+void Modi_info::update_insertion(vector<byte> list)
 {
-	this->del_index = index;
-	this->del_len = len;
-
-	return;
-}
-
-void Modi_info::update_insertion(int index, vector<byte> list)
-{
-	this->ins_index = index;
 	this->ins_list.clear();
 	this->ins_list.insert(ins_list.end(), list.begin(), list.end());
+	return;
 }
 
 void Modi_info::unpacking(vector<byte> data, vector<byte> metadata)
 {
 	metadata.clear();
 	metadata.insert(metadata.end(), this->new_meta.begin(), this->new_meta.end());
+	return;
+}
 
+void Modi_info::update_insertion(byte* list)
+{
+	this->ins_list.clear();
+	this->ins_list.insert(ins_list.end(), list, list + AES::BLOCKSIZE);
+	return;
+}
+
+void unpacking(vector<byte> data, vector<byte> metadata)
+{
+	data.erase(data.begin() + del_index, data.begin() + del_index + del_len);
+	data.insert(data.begin() + ins_index, ins_list.begin(), ins_list.end());
+	metadata.clear();
+	metadata.insert(metadata.begin(), new_meta.begin(), new_meta.end());
+	return;
 }
 
 
@@ -314,14 +322,21 @@ Modi_info DL_ECB::Insertion(string text, int index)
 
 		data.erase(data.begin() + AES::BLOCKSIZE*block_index, data.begin() + AES::BLOCKSIZE*(block_index + 1));
 		meta_plain.erase(meta_plain.begin() + block_index);
+		modi.del_index = AES::BLOCKSIZE*block_index;
+		modi.del_len = AES::BLOCKSIZE;
 	}
 
 	vector<byte> new_cipher = encryption(insert_text, this->key, f_link, b_link);
 	vector<byte> new_meta = metadata_gen(insert_text.size());
 	this->data.insert(this->data.begin() + block_index*AES::BLOCKSIZE, new_cipher.begin(), new_cipher.end());
+	
+	modi.ins_index = block_index*AES::BLOCKSIZE;
+	modi.update_insertion(new_cipher);
+	
 	meta_plain.insert(meta_plain.begin() + block_index, new_meta.begin(), new_meta.end());
 	this->metadata = metadata_enc(meta_plain, key);
-
+	
+	modi.update_meta(this->metadata);
 	return modi;
 }
 
@@ -355,6 +370,8 @@ Modi_info DL_ECB::Deletion(int del_len, int index)
 		{
 			if (b_block_index == meta_plain.size())				// remove all
 			{
+				modi.del_index = 0;
+				modi.del_len = this->data.size();
 				this->data.clear();
 				this->metadata.clear();
 			}
@@ -366,6 +383,8 @@ Modi_info DL_ECB::Deletion(int del_len, int index)
 				tmp_block = dec_one(this->data.data() + b_block_index*AES::BLOCKSIZE, this->key, 0x00);
 				tmp_block[0] = f_link;
 				this->data.erase(this->data.begin() + f_block_index*AES::BLOCKSIZE, this->data.begin() + b_block_index*AES::BLOCKSIZE);
+				modi.del_index = f_block_index*AES::BLOCKSIZE;
+				modi.del_len = (b_block_index - f_block_index)*AES::BLOCKSIZE;
 				string tmp_str;
 				for(int i = 1; i < one_block_len; i++)
 				{
@@ -373,6 +392,8 @@ Modi_info DL_ECB::Deletion(int del_len, int index)
 				}
 				tmp_block = enc_one(tmp_str, this->key, tmp_block[0], tmp_block[15]);
 				this->data.insert(this->data.begin() + f_block_index * AES::BLOCKSIZE, tmp_block, tmp_block + AES::BLOCKSIZE);
+				modi.ins_index = f_block_index*AES::BLOCKSIZE;
+				modi.update_insertion(tmp_block);
 			}
 		}
 		else
@@ -381,6 +402,8 @@ Modi_info DL_ECB::Deletion(int del_len, int index)
 			b_link = tmp_block[15];
 			tmp_block = dec_one(this->data.data() + (f_block_index - 1)*AES::BLOCKSIZE, this->key, 0x00);
 			this->data.erase(this->data.begin() + (f_block_index - 1)*AES::BLOCKSIZE, this->data.begin() + b_block_index*AES::BLOCKSIZE);
+			modi.del_index = (f_block_index - 1)*AES::BLOCKSIZE;
+			modi.del_len = (b_block_index - f_block_index + 1)*AES::BLOCKSIZE;
 			string tmp_str;
 			for (int i = 0; i < one_block_len; i++)
 			{
@@ -388,7 +411,8 @@ Modi_info DL_ECB::Deletion(int del_len, int index)
 			}
 			tmp_block = enc_one(tmp_str, this->key, tmp_block[0], b_link);
 			this->data.insert(this->data.begin() + (f_block_index - 1)*AES::BLOCKSIZE, tmp_block, tmp_block + AES::BLOCKSIZE);
-
+			modi.ins_index = (f_block_index - 1)*AES::BLOCKSIZE;
+			modi.update_insertion(tmp_block);
 		}
 		meta_plain.erase(meta_plain.begin() + f_block_index, meta_plain.begin() + b_block_index);
 	}
@@ -407,8 +431,11 @@ Modi_info DL_ECB::Deletion(int del_len, int index)
 		}
 		tmp_block = enc_one(tmp_str, this->key, f_link, b_link);
 		this->data.erase(this->data.begin() + f_block_index*AES::BLOCKSIZE,this->data.begin() +  (b_block_index + 1)*AES::BLOCKSIZE);
+		modi.del_index = f_block_index*AES::BLOCKSIZE;
+		modi.del_len = (b_block_index + 1 - f_block_index)*AES::BLOCKSIZE;
 		this->data.insert(this->data.begin() + f_block_index*AES::BLOCKSIZE, tmp_block,tmp_block + AES::BLOCKSIZE);
-
+		modi.ins_index = f_block_index*AES::BLOCKSIZE;
+		modi.update_insertion(tmp_block);
 		meta_plain.erase(meta_plain.begin() + f_block_index, meta_plain.begin() + b_block_index + 1);
 		meta_plain.insert(meta_plain.begin() + f_block_index, (byte)tmp_str.length());
 	}
@@ -427,8 +454,12 @@ Modi_info DL_ECB::Deletion(int del_len, int index)
 		b_link = tmp_block[15];
 		tmp_block = enc_one(tmp_str, this->key, f_link, b_link);
 		this->data.erase(this->data.begin() + f_block_index*AES::BLOCKSIZE, this->data.begin() + b_block_index*AES::BLOCKSIZE);
+		modi.del_index = f_block_index*AES::BLOCKSIZE;
+		modi.del_len = (b_block_index - f_block_index)*AES::BLOCKSIZE;
+		
 		this->data.insert(this->data.begin() + f_block_index*AES::BLOCKSIZE, tmp_block, tmp_block + AES::BLOCKSIZE); 
-
+		modi.ins_index = f_block_index&AES::BLOCKSIZE;
+		modi.update_insertion(tmp_block);
 		meta_plain.erase(meta_plain.begin() + f_block_index, meta_plain.begin() + b_block_index);
 		meta_plain.insert(meta_plain.begin() + f_block_index, (byte)tmp_str.length());
 	}
@@ -451,8 +482,11 @@ Modi_info DL_ECB::Deletion(int del_len, int index)
 		}
 		vector<byte> tmp_enc = encryption(tmp_str, this->key, f_link, b_link);
 		this->data.erase(this->data.begin() + f_block_index*AES::BLOCKSIZE, this->data.begin() + (b_block_index + 1)*AES::BLOCKSIZE);
+		modi.del_index = f_block_index*AES::BLOCKSIZE;
+		modi.del_len = (b_block_index + 1 - f_block_index)*AES::BLOCKSIZE;
 		this->data.insert(this->data.begin() + f_block_index*AES::BLOCKSIZE, tmp_enc.begin(), tmp_enc.end());
-
+		modi.ins_index = f_block_index*AES::BLOCKSIZE;
+		modi.update_insertion(tmp_enc);
 		meta_plain.erase(meta_plain.begin() + f_block_index, meta_plain.begin() + b_block_index + 1);
 		if(tmp_str.length() > AES::BLOCKSIZE)
 		{
@@ -464,8 +498,10 @@ Modi_info DL_ECB::Deletion(int del_len, int index)
 			meta_plain.insert(meta_plain.begin() + f_block_index, (byte)tmp_str.length());
 		}
 	}
+	
 	this->metadata = metadata_enc(meta_plain, key);
-
+	modi.update_meta(this->metadata);
+	
 	return modi;
 }
 

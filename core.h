@@ -19,17 +19,17 @@ class Modi_info
 private:
 	int modi_index; 
 	int modi_len;
-	int del_index;
-	int del_len;
-	int ins_index;
 	vector<byte> new_meta;
 	vector<byte> ins_list;
 
 public:
+	int del_index;
+	int del_len;
+	int ins_index;
 	Modi_info(int index, int len);
 	void update_meta(vector<byte> metadata);
-	void update_deletion(int index, int len);
-	void update_insertion(int index, vector<byte> list);
+	void update_insertion(vector<byte> list);
+	void update_insertion(byte* list);
 	void unpacking(vector<byte> data, vector<byte> metadata);
 };
 
