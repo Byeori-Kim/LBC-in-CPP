@@ -13,9 +13,9 @@ using namespace std;
 using namespace CryptoPP;
 
 
-byte* enc_one(string input_str, byte* key, byte f_link, byte b_link)
+void enc_one(string input_str, byte* key, byte f_link, byte b_link, byte* des)
 {
-	byte* cipher_block = new byte[AES::BLOCKSIZE];
+	byte cipher_block[AES::BLOCKSIZE];
 
 	ECB_Mode<AES>::Encryption e;
 	e.SetKey(key, AES::DEFAULT_KEYLENGTH);
@@ -24,13 +24,13 @@ byte* enc_one(string input_str, byte* key, byte f_link, byte b_link)
 	cipher_block[15] = b_link;
 	memcpy(cipher_block + 1, input_str.c_str(), one_block_len);
 	e.ProcessData(cipher_block, cipher_block, AES::BLOCKSIZE);
-
-	return cipher_block;
+	memcpy(des, cipher_block, AES::BLOCKSIZE);
+	return;
 }
 
-byte* dec_one(byte* cipher, byte* key, byte check)
+void dec_one(byte* cipher, byte* key, byte check, byte* des)
 {
-	byte* plain = new byte[AES::BLOCKSIZE];
+	byte plain[AES::BLOCKSIZE];
 
 	ECB_Mode<AES>::Decryption d;
 	d.SetKey(key, AES::DEFAULT_KEYLENGTH);
@@ -40,8 +40,9 @@ byte* dec_one(byte* cipher, byte* key, byte check)
 		cout << "Error" << endl;
 		memset(plain, 0x00, AES::BLOCKSIZE);
 	}
+	memcpy(des, plain, AES::BLOCKSIZE);
 
-	return plain;
+	return;
 }
 
 vector<byte> metadata_gen(int len)
@@ -61,67 +62,47 @@ vector<byte> metadata_gen(int len)
 
 vector<byte> metadata_enc(vector<byte> metadata, byte* key)
 {
-	vector<byte> meta_cipher;
-
 	srand(time(NULL));
 	byte front_link = (byte)rand()%256;
 	byte back_link = (byte)rand()%256;
 
-	int left_len = metadata.size();
-	byte* index = metadata.data();
+	string meta_str(reinterpret_cast<char*>(metadata.data()), metadata.size());
 
-	while(left_len > one_block_len)
-	{
-		string subStr((const char*)index, one_block_len); 
-		byte* tmp_block = enc_one(subStr, key, front_link, back_link);
+	vector<byte> meta_cipher = encryption(meta_str, key, front_link, back_link);
 
-		for (int i = 0; i < AES::BLOCKSIZE; i++)
-		{	
-			meta_cipher.push_back(tmp_block[i]);
-		}
-
-		front_link = back_link;
-		back_link = (byte)rand()%256;	
-
-		index += one_block_len;
-		left_len -= one_block_len;
-	}
-	string subStr((const char*)index, left_len);
-	for (int i = 0; i < one_block_len - left_len; i++)
-	{
-		subStr += '\x00';
-	}
-	byte* tmp_block = enc_one(subStr, key, front_link, back_link);
-	for (int i = 0; i < AES::BLOCKSIZE; i++)
-	{	
-		meta_cipher.push_back(tmp_block[i]);
-	}
 	return meta_cipher;
 }
 
 vector<byte> metadata_dec(vector<byte> meta_cipher, byte* key)
 {
+	ECB_Mode<AES>::Decryption d;
 	vector<byte> metadata;
-	int left_len = meta_cipher.size();
-	byte* index = meta_cipher.data();
-	byte check = 0x00;
-	if (left_len == 0)
-		return metadata;
-	while(left_len > 0)
+	d.SetKey(key, AES::DEFAULT_KEYLENGTH);
+	if(meta_cipher.size() != 0)
 	{
-		byte* tmp_block = dec_one(index, key, check);
-		for (int i = 1; i < AES::BLOCKSIZE - 1; i++)
-		{	
-			metadata.push_back(tmp_block[i]);
+		byte dec_meta[meta_cipher.size()] = {0x00, };
+		byte tmp_meta[meta_cipher.size()/AES::BLOCKSIZE*one_block_len] = {0x00, };
+		d.ProcessData(dec_meta, (const byte*)meta_cipher.data(), meta_cipher.size());
+		byte f_iv = 0x00;
+		byte b_iv = 0x00;
+		for(int i = 0; i < sizeof(dec_meta); i += AES::BLOCKSIZE)
+		{
+			b_iv = dec_meta[i];
+			if(f_iv != b_iv && f_iv != 0x00)
+			{
+				cout << "Error in metadata!!" <<endl;
+			}
+			else
+			{
+				memcpy(tmp_meta + i/AES::BLOCKSIZE*one_block_len, dec_meta + i + 1, one_block_len);
+			}
+			f_iv = dec_meta[i + AES::BLOCKSIZE - 1];
 		}
-
-		check = tmp_block[15];
-		index += AES::BLOCKSIZE;
-		left_len -= AES::BLOCKSIZE;
-	}
-	while(metadata.back() == 0x00)
-	{
-		metadata.pop_back();
+		metadata.insert(metadata.begin(), tmp_meta, tmp_meta + sizeof(tmp_meta));
+		while(metadata.back() == 0x00)
+		{
+			metadata.pop_back();
+		}
 	}
 
 	return metadata;
@@ -130,37 +111,30 @@ vector<byte> metadata_dec(vector<byte> meta_cipher, byte* key)
 vector<byte> encryption(string plain, byte* key, byte f_iv, byte b_iv)
 {
 	srand(time(NULL));
-
+	ECB_Mode<AES>::Encryption e;
+	e.SetKey(key, AES::DEFAULT_KEYLENGTH);
 	vector<byte> cipher;
-	int left_len = plain.length();
 
-	byte f_link = f_iv;
-	byte b_link = (byte)rand()%256;
-
-	while(left_len > one_block_len)
+	while(plain.length()%one_block_len != 0)
 	{
-		string subStr = plain.substr(plain.length() - left_len, one_block_len);
-		byte* tmp_block = enc_one(subStr, key, f_link, b_link);
-		for (int i = 0; i < AES::BLOCKSIZE; i++)
-		{	
-			cipher.push_back(tmp_block[i]);
-		}
-		f_link = b_link;
-		b_link = (byte)rand()%256;
-		left_len -= one_block_len;
+		plain += '\x00';
 	}
 
-	string subStr = plain.substr(plain.length() - left_len);
-	while(subStr.length() != one_block_len)
+	int cipher_len = plain.length()/one_block_len*AES::BLOCKSIZE;
+
+	plain = (1, static_cast<char>(f_iv)) + plain;
+	plain += (1, static_cast<char>(b_iv));
+	for(int i = AES::BLOCKSIZE; i < cipher_len; i += AES::BLOCKSIZE)
 	{
-		subStr += '\x00';
+		byte link = (byte)rand()%256;
+		byte twolink[2] = {link, link};
+		string linkStr(reinterpret_cast<char*>(twolink), sizeof(twolink));
+		plain.insert(i - 1, linkStr);
 	}
 
-	byte* tmp_block = enc_one(subStr, key, f_link, b_iv);
-	for (int i = 0; i < AES::BLOCKSIZE; i++)
-	{	
-		cipher.push_back(tmp_block[i]);
-	}
+	byte cipherBlocks[cipher_len] = {0x00, };
+	e.ProcessData(cipherBlocks, (const byte*)plain.c_str(), cipher_len);
+	cipher.insert(cipher.begin(), cipherBlocks, cipherBlocks + cipher_len);
 
 	return cipher;
 }
@@ -169,21 +143,32 @@ string decryption(vector<byte> cipher, vector<byte> meta_cipher, byte* key)
 {
 	string plain;
 	vector<byte> metadata;
-
-	byte* index = cipher.data();
 	byte check = 0x00;
 	metadata = metadata_dec(meta_cipher, key);
 
-	for (int i = 0; i < metadata.size(); i++)
-	{
-		byte* tmp_block = dec_one(index, key, check);
-		for (int j = 0; j < (int)metadata[i]; j++)
-		{
-			plain.push_back(tmp_block[j + 1]);
-		}
+	ECB_Mode<AES>::Decryption d;
+	d.SetKey(key, AES::DEFAULT_KEYLENGTH);
 
-		check = tmp_block[15];
-		index += AES::BLOCKSIZE;
+	if(cipher.size() != 0)
+	{
+		byte dec_data[cipher.size()] = {0x00, };
+		d.ProcessData(dec_data, (const byte*)cipher.data(), cipher.size());
+		for(int i = 0; i < metadata.size(); i ++)
+		{
+			if(check != dec_data[i*AES::BLOCKSIZE] && check != 0x00)
+			{
+				cout << "Error in data!!" <<endl;
+			}
+			else
+			{
+				for (int j = 0; j < (int)metadata[i]; j++)
+				{
+					plain.push_back(dec_data[i*AES::BLOCKSIZE + j + 1]);
+				}
+
+			}
+			check = dec_data[(i + 1)*AES::BLOCKSIZE - 1];
+		}
 	}
 
 	return plain;
@@ -230,13 +215,6 @@ void Modi_info::update_insertion(vector<byte> list)
 	return;
 }
 
-void Modi_info::unpacking(vector<byte> data, vector<byte> metadata)
-{
-	metadata.clear();
-	metadata.insert(metadata.end(), this->new_meta.begin(), this->new_meta.end());
-	return;
-}
-
 void Modi_info::update_insertion(byte* list)
 {
 	this->ins_list.clear();
@@ -244,7 +222,7 @@ void Modi_info::update_insertion(byte* list)
 	return;
 }
 
-void unpacking(vector<byte> data, vector<byte> metadata)
+void Modi_info::unpacking(vector<byte> data, vector<byte> metadata)
 {
 	data.erase(data.begin() + del_index, data.begin() + del_index + del_len);
 	data.insert(data.begin() + ins_index, ins_list.begin(), ins_list.end());
@@ -304,7 +282,8 @@ Modi_info DL_ECB::Insertion(string text, int index)
 			}
 		}
 
-		byte* tmp_block = dec_one(this->data.data() + AES::BLOCKSIZE*block_index, this->key, 0x00);
+		byte tmp_block[AES::BLOCKSIZE];
+		dec_one(this->data.data() + AES::BLOCKSIZE*block_index, this->key, 0x00, tmp_block);
 		f_link = tmp_block[0];
 		b_link = tmp_block[15];
 
@@ -326,16 +305,16 @@ Modi_info DL_ECB::Insertion(string text, int index)
 		modi.del_len = AES::BLOCKSIZE;
 	}
 
-	vector<byte> new_cipher = encryption(insert_text, this->key, f_link, b_link);
 	vector<byte> new_meta = metadata_gen(insert_text.size());
+	vector<byte> new_cipher = encryption(insert_text, this->key, f_link, b_link);
 	this->data.insert(this->data.begin() + block_index*AES::BLOCKSIZE, new_cipher.begin(), new_cipher.end());
-	
+
 	modi.ins_index = block_index*AES::BLOCKSIZE;
 	modi.update_insertion(new_cipher);
-	
+
 	meta_plain.insert(meta_plain.begin() + block_index, new_meta.begin(), new_meta.end());
 	this->metadata = metadata_enc(meta_plain, key);
-	
+
 	modi.update_meta(this->metadata);
 	return modi;
 }
@@ -365,7 +344,7 @@ Modi_info DL_ECB::Deletion(int del_len, int index)
 
 	if (f_in_index == 0 && b_in_index == 0)
 	{
-		cout << "case1" << endl;
+		//cout << "case1" << endl;
 		if (f_block_index == 0)
 		{
 			if (b_block_index == meta_plain.size())				// remove all
@@ -378,9 +357,10 @@ Modi_info DL_ECB::Deletion(int del_len, int index)
 
 			else
 			{
-				byte* tmp_block = dec_one(this->data.data() + f_block_index*AES::BLOCKSIZE, this->key, 0x00);
+				byte tmp_block[AES::BLOCKSIZE];
+				dec_one(this->data.data() + f_block_index*AES::BLOCKSIZE, this->key, 0x00, tmp_block);
 				f_link = tmp_block[0];
-				tmp_block = dec_one(this->data.data() + b_block_index*AES::BLOCKSIZE, this->key, 0x00);
+				dec_one(this->data.data() + b_block_index*AES::BLOCKSIZE, this->key, 0x00, tmp_block);
 				tmp_block[0] = f_link;
 				this->data.erase(this->data.begin() + f_block_index*AES::BLOCKSIZE, this->data.begin() + b_block_index*AES::BLOCKSIZE);
 				modi.del_index = f_block_index*AES::BLOCKSIZE;
@@ -390,7 +370,7 @@ Modi_info DL_ECB::Deletion(int del_len, int index)
 				{
 					tmp_str += tmp_block[i];
 				}
-				tmp_block = enc_one(tmp_str, this->key, tmp_block[0], tmp_block[15]);
+				enc_one(tmp_str, this->key, tmp_block[0], tmp_block[15], tmp_block);
 				this->data.insert(this->data.begin() + f_block_index * AES::BLOCKSIZE, tmp_block, tmp_block + AES::BLOCKSIZE);
 				modi.ins_index = f_block_index*AES::BLOCKSIZE;
 				modi.update_insertion(tmp_block);
@@ -398,9 +378,10 @@ Modi_info DL_ECB::Deletion(int del_len, int index)
 		}
 		else
 		{
-			byte* tmp_block = dec_one(this->data.data() + (b_block_index - 1)*AES::BLOCKSIZE, this->key, 0x00);
+			byte tmp_block[AES::BLOCKSIZE];
+			dec_one(this->data.data() + (b_block_index - 1)*AES::BLOCKSIZE, this->key, 0x00, tmp_block);
 			b_link = tmp_block[15];
-			tmp_block = dec_one(this->data.data() + (f_block_index - 1)*AES::BLOCKSIZE, this->key, 0x00);
+			dec_one(this->data.data() + (f_block_index - 1)*AES::BLOCKSIZE, this->key, 0x00, tmp_block);
 			this->data.erase(this->data.begin() + (f_block_index - 1)*AES::BLOCKSIZE, this->data.begin() + b_block_index*AES::BLOCKSIZE);
 			modi.del_index = (f_block_index - 1)*AES::BLOCKSIZE;
 			modi.del_len = (b_block_index - f_block_index + 1)*AES::BLOCKSIZE;
@@ -409,7 +390,7 @@ Modi_info DL_ECB::Deletion(int del_len, int index)
 			{
 				tmp_str += tmp_block[i+1];
 			}
-			tmp_block = enc_one(tmp_str, this->key, tmp_block[0], b_link);
+			enc_one(tmp_str, this->key, tmp_block[0], b_link, tmp_block);
 			this->data.insert(this->data.begin() + (f_block_index - 1)*AES::BLOCKSIZE, tmp_block, tmp_block + AES::BLOCKSIZE);
 			modi.ins_index = (f_block_index - 1)*AES::BLOCKSIZE;
 			modi.update_insertion(tmp_block);
@@ -419,17 +400,18 @@ Modi_info DL_ECB::Deletion(int del_len, int index)
 
 	else if (f_in_index == 0 && b_in_index != 0)
 	{
-		cout << "case2" << endl;
-		byte* tmp_block = dec_one(this->data.data() + f_block_index*AES::BLOCKSIZE, this->key, 0x00);
+		//cout << "case2" << endl;
+		byte tmp_block[AES::BLOCKSIZE];
+		dec_one(this->data.data() + f_block_index*AES::BLOCKSIZE, this->key, 0x00, tmp_block);
 		f_link = tmp_block[0];
-		tmp_block = dec_one(this->data.data() + b_block_index*AES::BLOCKSIZE, this->key, 0x00);
+		dec_one(this->data.data() + b_block_index*AES::BLOCKSIZE, this->key, 0x00, tmp_block);
 		b_link = tmp_block[15];
 		string tmp_str;
 		for (int i = b_in_index; i < one_block_len; i++)
 		{
 			tmp_str += tmp_block[i + 1];
 		}
-		tmp_block = enc_one(tmp_str, this->key, f_link, b_link);
+		enc_one(tmp_str, this->key, f_link, b_link, tmp_block);
 		this->data.erase(this->data.begin() + f_block_index*AES::BLOCKSIZE,this->data.begin() +  (b_block_index + 1)*AES::BLOCKSIZE);
 		modi.del_index = f_block_index*AES::BLOCKSIZE;
 		modi.del_len = (b_block_index + 1 - f_block_index)*AES::BLOCKSIZE;
@@ -442,21 +424,22 @@ Modi_info DL_ECB::Deletion(int del_len, int index)
 
 	else if (f_in_index != 0 && b_in_index == 0)
 	{
-		cout << "case3" << endl;
-		byte* tmp_block = dec_one(this->data.data() + f_block_index*AES::BLOCKSIZE, this->key, 0x00);
+		//cout << "case3" << endl;
+		byte tmp_block[AES::BLOCKSIZE];
+		dec_one(this->data.data() + f_block_index*AES::BLOCKSIZE, this->key, 0x00, tmp_block);
 		f_link = tmp_block[0];
 		string tmp_str;
 		for (int i = 0; i < f_in_index; i++)
 		{
 			tmp_str += tmp_block[i + 1];
 		}
-		tmp_block = dec_one(this->data.data() + (b_block_index - 1)*AES::BLOCKSIZE, this->key, 0x00);
+		dec_one(this->data.data() + (b_block_index - 1)*AES::BLOCKSIZE, this->key, 0x00, tmp_block);
 		b_link = tmp_block[15];
-		tmp_block = enc_one(tmp_str, this->key, f_link, b_link);
+		enc_one(tmp_str, this->key, f_link, b_link, tmp_block);
 		this->data.erase(this->data.begin() + f_block_index*AES::BLOCKSIZE, this->data.begin() + b_block_index*AES::BLOCKSIZE);
 		modi.del_index = f_block_index*AES::BLOCKSIZE;
 		modi.del_len = (b_block_index - f_block_index)*AES::BLOCKSIZE;
-		
+
 		this->data.insert(this->data.begin() + f_block_index*AES::BLOCKSIZE, tmp_block, tmp_block + AES::BLOCKSIZE); 
 		modi.ins_index = f_block_index&AES::BLOCKSIZE;
 		modi.update_insertion(tmp_block);
@@ -466,15 +449,16 @@ Modi_info DL_ECB::Deletion(int del_len, int index)
 
 	else
 	{
-		cout << "case4" << endl;
-		byte* tmp_block = dec_one(this->data.data() + f_block_index*AES::BLOCKSIZE, this->key, 0x00);
+		//cout << "case4" << endl;
+		byte tmp_block[AES::BLOCKSIZE];
+		dec_one(this->data.data() + f_block_index*AES::BLOCKSIZE, this->key, 0x00, tmp_block);
 		f_link = tmp_block[0];
 		string tmp_str;
 		for (int i = 0; i < f_in_index; i++)
 		{
 			tmp_str += tmp_block[i + 1];
 		}
-		tmp_block = dec_one(this->data.data() + b_block_index*AES::BLOCKSIZE, this->key, 0x00);
+		dec_one(this->data.data() + b_block_index*AES::BLOCKSIZE, this->key, 0x00, tmp_block);
 		b_link = tmp_block[15];
 		for(int i = b_in_index; i < one_block_len; i++)
 		{
@@ -488,20 +472,20 @@ Modi_info DL_ECB::Deletion(int del_len, int index)
 		modi.ins_index = f_block_index*AES::BLOCKSIZE;
 		modi.update_insertion(tmp_enc);
 		meta_plain.erase(meta_plain.begin() + f_block_index, meta_plain.begin() + b_block_index + 1);
-		if(tmp_str.length() > AES::BLOCKSIZE)
+		if(tmp_str.length() > one_block_len)
 		{
-			meta_plain.insert(meta_plain.begin() + f_block_index, (byte)(tmp_str.length()%AES::BLOCKSIZE));
-			meta_plain.insert(meta_plain.begin() + f_block_index, 0x10);
+			meta_plain.insert(meta_plain.begin() + f_block_index, (byte)(tmp_str.length()%one_block_len));
+			meta_plain.insert(meta_plain.begin() + f_block_index, (byte)one_block_len);
 		}
 		else
 		{
 			meta_plain.insert(meta_plain.begin() + f_block_index, (byte)tmp_str.length());
 		}
 	}
-	
+
 	this->metadata = metadata_enc(meta_plain, key);
 	modi.update_meta(this->metadata);
-	
+
 	return modi;
 }
 

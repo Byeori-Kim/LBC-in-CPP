@@ -55,9 +55,9 @@ public:
 	Modi_info Deletion(int del_len, int index);
 };
 
-byte* enc_one(string input_str, byte* key, byte f_link, byte b_link);
+void enc_one(string input_str, byte* key, byte f_link, byte b_link, byte* des);
 
-byte* dec_one(byte* cipher, byte* key, byte check);
+void dec_one(byte* cipher, byte* key, byte check, byte* des);
 
 vector<byte> metadata_gen(int len);
 
